@@ -11,6 +11,7 @@
                     fields: [
                         {name: 'id', label: 'ID'},
                         {name: 'name', label: 'Name'},
+                        {name: 'type', label: 'Type', source: 'option_types'},
                     ]
                 },
                 edit_view: {

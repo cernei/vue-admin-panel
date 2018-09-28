@@ -4,26 +4,28 @@ import {http} from '@/http-common';
 
 Vue.use(Vuex);
 
+const sourceMap = {
+    currencies: {type: 'remote', url: '/currencies'},
+    categories: {type: 'remote', url: '/categories'},
+    parts: {type: 'remote', url: '/parts'},
+    options: {type: 'remote', url: '/options'},
+    groups: {type: 'remote', url: '/groups'},
+    stores: {type: 'remote', url: '/stores'},
+};
+const globalSources = [
+    'option_types', 'active_or_disabled'
+];
 export default new Vuex.Store({
     state: {
-        sourceMap: {
-            currencies: {type: 'remote', url: '/currencies'},
-            categories: {type: 'remote', url: '/categories'},
-            products: {type: 'remote', url: '/products'},
-            parts: {type: 'remote', url: '/parts'},
-            options: {type: 'remote', url: '/options'},
-            groups: {type: 'remote', url: '/groups'},
-            stores: {type: 'remote', url: '/stores'},
-        },
+        sourcesProcessed: {},
         sources: {},
         batch: [],
         batchStatus: false,
-        globalsProcessed: false
     },
     getters: {
         getList: (state) => (source) => {
             let newArr = {};
-            let sm = state.sourceMap[source];
+            let sm = sourceMap[source];
             if (source && sm) {
                 let pluck = sm.pluck ? sm.pluck : ['id', 'name'];
                 let items = state.sources[source];
@@ -73,22 +75,25 @@ export default new Vuex.Store({
                 newArr.push({id: i, name: options[i]});
             }
             return newArr;
-        }
+        },
+
+
     },
     mutations: {
-        flush(state, payload) {
-            state.sourceMap[payload.source] = {...state.sourceMap[payload.source], processed: false};
+        flush(state, source) {
+            let add = {};
+            add[source] = false;
+            state.sourcesProcessed = {...state.sourcesProcessed, ...add};
         },
         setData(state, payload) {
             let source = {};
             source[payload.source] = payload.data;
             state.sources = {...state.sources, ...source};
         },
-        setProcessed(state, payload) {
-            state.sourceMap[payload.source] = {...state.sourceMap[payload.source], processed: payload.status};
-        },
-        setError(state, payload) {
-            state.error[payload.source] = {...state.sourceMap[payload.source], processed: payload.status};
+        setProcessed(state, source) {
+            let add = {};
+            add[source] = true;
+            state.sourcesProcessed = {...state.sourcesProcessed, ...add};
         },
 
         startBatch(state) {
@@ -96,29 +101,34 @@ export default new Vuex.Store({
             state.batchStatus = true;
         },
         addToBatch(state, payload) {
-            state.batch.push(payload.source);
+            if (!state.sourcesProcessed[payload.source] && state.batch.indexOf(payload.source) == -1) {
+                state.batch.push(payload.source);
+            }
         },
         flushBatch(state) {
             state.batchStatus = false;
             state.batch = [];
         },
 
-        setGlobalsProcessed(state) {
-            state.globalsProcessed = true;
-        },
     },
     actions: {
+        addGlobalSources({commit}) {
+            for(let i in globalSources) {
+                commit('addToBatch', {source: globalSources[i]});
+            }
+
+        },
         loadSource({commit, state}, name) {
-            let sm = state.sourceMap[name];
+            let sm = sourceMap[name];
             if (!sm) {
                 console.log('[APP] Invalid source:', name);
                 return;
             }
-            if (!sm.processed) {
+            if (!state.sourcesProcessed[name]) {
                 if (sm.type == 'remote') {
                     http.get(sm.url).then(response => {
                         commit('setData', {source: name, data: response.data});
-                        commit('setProcessed', {source: name, status: true});
+                        commit('setProcessed', name);
                     });
                 } else {
 
@@ -130,22 +140,12 @@ export default new Vuex.Store({
                 http.get('/batch', {params: {arr: state.batch.join(',')}}).then(response => {
                     for (let name in response.data) {
                         commit('setData', {source: name, data: response.data[name]});
-                        commit('setProcessed', {source: name, status: true});
+                        commit('setProcessed', name);
                     }
                     commit('flushBatch');
                 });
             }
         },
-        loadGlobals({commit, state}) {
-            if (state.globalsProcessed) {
-                http.get('/globals').then(response => {
-                    for (var sourceName in response.data) {
-                        commit('setData', {source: sourceName, data: response.data[sourceName]});
-                        commit('setProcessed', {source: sourceName, status: true});
-                    }
-                    commit('setGlobalsProcessed');
-                });
-            }
-        },
+
     }
 })
